@@ -3,6 +3,9 @@
 #include "mptable.h"
 #include "ioport.h"
 
+#define MMIO_MEM_START		0xd0000000
+#define FIRST_ADDR_PAST_32BITS	0x100000000
+
 int pow(int base, unsigned int exp) {
 	int i;
 	int ret = 1;
@@ -73,6 +76,7 @@ int __attribute__ ((section (".text.startup"))) main(void)
 {
 	struct boot_params *bp = (struct boot_params *) 0x7000;
 	char *bpzone = (char *) 0x7000;
+	unsigned long long mem_size;
 	int num_cpus;
 	int ram_mib;
 	int i;
@@ -102,12 +106,24 @@ int __attribute__ ((section (".text.startup"))) main(void)
 	bp->e820_table[0].size = 0x9fc00;
 	bp->e820_table[0].type = 1;
 
-	bp->e820_table[1].addr = 0x100000;
-	bp->e820_table[1].size =
-		(((unsigned long long) ram_mib) * 1024 * 1024) - 0x100000;
-	bp->e820_table[1].type = 1;
+	mem_size = ((unsigned long long) ram_mib) * 1024 * 1024;
+	if (mem_size <= MMIO_MEM_START) {
+		bp->e820_table[1].addr = 0x100000;
+		bp->e820_table[1].size = mem_size - 0x100000;
+		bp->e820_table[1].type = 1;
 
-	bp->e820_entries = 2;
+		bp->e820_entries = 2;
+	} else {
+		bp->e820_table[1].addr = 0x100000;
+		bp->e820_table[1].size = MMIO_MEM_START - 0x100000;
+		bp->e820_table[1].type = 1;
+
+		bp->e820_table[2].addr = FIRST_ADDR_PAST_32BITS;
+		bp->e820_table[2].size = mem_size - MMIO_MEM_START;
+		bp->e820_table[2].type = 1;
+
+		bp->e820_entries = 3;
+	}
 
 	setup_mptable(num_cpus);
 
