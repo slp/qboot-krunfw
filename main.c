@@ -6,6 +6,16 @@
 #define MMIO_MEM_START		0xd0000000
 #define FIRST_ADDR_PAST_32BITS	0x100000000
 
+struct cc_blob_sev_info {
+        uint32_t magic;      /* 0x414d4445 (AMDE) */
+        uint16_t version;
+	uint16_t reserved;
+        uint64_t secrets_phys; /* pointer to secrets page */
+        uint32_t secrets_len;
+        uint64_t cpuid_phys;   /* 32-bit pointer to cpuid page */
+        uint32_t cpuid_len;
+};
+
 int pow(int base, unsigned int exp) {
 	int i;
 	int ret = 1;
@@ -72,23 +82,53 @@ int parse_config(int *num_cpus, int *ram_mib)
 	return 0;
 }
 
+int pvalidate(int paddr)
+{
+    int size = 0;
+    int validated = 1;
+    int ret = 0;
+
+    asm(".byte 0xF2, 0x0F, 0x01, 0xFF;"
+    //asm(".byte 0x85, 0xc0;"
+        : "=a" (ret)
+        : "a" (paddr), "c" (size), "d" (validated)
+        );
+
+    return ret;
+}
+
 int __attribute__ ((section (".text.startup"))) main(void)
 {
+	struct cc_blob_sev_info *cc = (struct cc_blob_sev_info *) 0x4000;
 	struct boot_params *bp = (struct boot_params *) 0x7000;
+	char *test = (char *) 0x4000;
 	char *bpzone = (char *) 0x7000;
 	unsigned long long mem_size;
 	int num_cpus;
 	int ram_mib;
 	int i;
 
-	if (parse_config(&num_cpus, &ram_mib) != 0) {
-		num_cpus = 1;
-		ram_mib = 2048;
-	}
+	//test[0] = 1;
+
+	//if (parse_config(&num_cpus, &ram_mib) != 0) {
+	num_cpus = 1;
+	ram_mib = 2048;
+
+	//}
+	memset(cc, 0, sizeof(struct cc_blob_sev_info));
+
+	cc->magic = 0x45444d41;
+        cc->version = 1;
+        cc->secrets_phys = 0x5000;
+        cc->secrets_len = 0x1000;
+        cc->cpuid_phys = 0x6000;
+        cc->cpuid_len = 0x1000;
 
 	for (i = 0; i < sizeof(struct boot_params); i++) {
 		bpzone[i] = 0;
 	}
+
+	bp->cc_blob_address = 0x4000;
 
 	bp->hdr.type_of_loader = 0xff;
 	bp->hdr.boot_flag = 0xaa55;
@@ -125,7 +165,19 @@ int __attribute__ ((section (".text.startup"))) main(void)
 		bp->e820_entries = 3;
 	}
 
-	setup_mptable(num_cpus);
+
+
+#if 1
+	for (i = 0; i < mem_size; i += 4096) {
+		if (pvalidate(i) != 0) {
+			//asm("hlt");
+		}
+	}
+#endif
+
+	//test[0] = 1;
+	//asm("hlt");
+	//setup_mptable(num_cpus);
 
 	asm("xor %rsp, %rsp");
 	asm("xor %rbp, %rbp");

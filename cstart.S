@@ -126,7 +126,7 @@ l3:
 	.code64
 	/*
 	 * Jump into C code (main)
-	 */
+	*/
 	mov $0x00000000ffff0000, %rax
 	jmp *%rax
 	hlt
