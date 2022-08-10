@@ -215,3 +215,4 @@ ENTRY_END(pm_entry)
 	.code16gcc
 	.section .resetvector
 	jmp pm_entry
+	jmp $0x9100, $0
