@@ -6,15 +6,18 @@
 #define MMIO_MEM_START		0xd0000000
 #define FIRST_ADDR_PAST_32BITS	0x100000000
 
+#define CC_BLOB_SEV_HDR_MAGIC   0x45444d41
 struct cc_blob_sev_info {
-        uint32_t magic;      /* 0x414d4445 (AMDE) */
+        uint32_t magic;
         uint16_t version;
-	uint16_t reserved;
-        uint64_t secrets_phys; /* pointer to secrets page */
+        uint16_t reserved;
+        uint64_t secrets_phys;
         uint32_t secrets_len;
-        uint64_t cpuid_phys;   /* 32-bit pointer to cpuid page */
+        uint32_t rsvd1;
+        uint64_t cpuid_phys;
         uint32_t cpuid_len;
-};
+        uint32_t rsvd2;
+} __packed;
 
 int pow(int base, unsigned int exp) {
 	int i;
