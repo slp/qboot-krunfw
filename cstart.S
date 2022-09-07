@@ -1,53 +1,14 @@
-.code16gcc
+.code32
 #include "assembly.h"
 .section .init
 ENTRY(pm_entry)
-	xor %ax, %ax
-	mov %ax, %fs
-	mov %ax, %gs
-	mov %ax, %ss
-	mov $0x8c00, %sp
-
-	mov %cr0, %eax
-	and $~((1 << 30) | (1 << 29)), %eax   # clear CD and NW
-	or $1, %al
-	mov %eax, %cr0
-	lgdtl %cs:0xfe00 + gdt32_descr - pm_entry
-	ljmpl $8, $0xfffffe00 + 2f - pm_entry
-
-2:
-	.code32
-
-	mov $16, %ax
-	mov %ax, %ds
-	mov %ax, %es
-	mov %ax, %fs
-	mov %ax, %gs
-	mov %ax, %ss
-
-	/*
-	 * Set up a minimal IDT with a single entry for our #VC handler.
-	 * We need this for SEV-ES, as CPUID will trigger a #VC exception.
-	 */
-	mov $0xfffffe00 + vc_handler_start - pm_entry, %eax
-	and $0x0000ffff, %eax
-	or  $0x00080000, %eax
-	mov %eax, (0xe8)
-	mov $0xffffaf00, %eax
-	mov %eax, (0xec)
-
-	lidtl %cs:0xfffffe00 + idt_descr - pm_entry
-
-	/*
-	 * Find out the location of the C-bit and load it into EDX
-	 */
-	mov $0x8000001f, %eax
-	// This will be either an actual CPUID (SEV) or a #VC (SEV-ES)
-	cpuid
-	and $0x3f, %ebx
-	sub $32, %ebx
+        xor %eax, %eax
 	xor %edx, %edx
-	bts %ebx, %edx
+        mov $0x8c00, %sp
+
+	// Detect BSPs
+	test %esi, %esi
+	jnz park_ap
 
 	/*
 	 * Set up the initial page tables.
@@ -93,7 +54,14 @@ l3:
 
 	inc %edi
 	loop l3
+	jmp switch_to_64
 
+park_ap:
+	mov (0x71e0), %eax
+	cmp %esi, %eax
+	jne park_ap
+
+switch_to_64:
 	/*
 	 * Enable paging and switch to 64-bit
 	 */
@@ -111,8 +79,8 @@ l3:
 	rdmsr
 
 	// Set LM-bit and write it
-	or  $0x100, %eax
-	wrmsr
+	//or  $0x100, %eax
+	//wrmsr
 
 	// Enable PG and PM
 	mov %cr0, %eax
@@ -127,6 +95,11 @@ l3:
 	/*
 	 * Jump into C code (main)
 	 */
+
+	cli
+	mov %rsi, %rax
+	and $0xff, %rax
+	mov %rax, %rdi
 	mov $0x00000000ffff0000, %rax
 	jmp *%rax
 	hlt
@@ -212,7 +185,6 @@ vc_handler_end:
 
 ENTRY_END(pm_entry)
 
-	.code16gcc
+	.code32
 	.section .resetvector
 	jmp pm_entry
-	jmp $0x9100, $0

@@ -24,6 +24,7 @@ elf = executable(
   'bios.bin.elf',
   files(
     'cstart.S',
+    'accept.S',
     'main.c',
     'mptable.c',
   ),

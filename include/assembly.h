@@ -3,7 +3,7 @@
 
 #define __ASSEMBLY__
 
-#define __ALIGN	.p2align 4, 0x90
+#define __ALIGN	.p2align 8, 0x90
 #define ENTRY(name)	\
 	__ALIGN;	\
 	.globl name;	\

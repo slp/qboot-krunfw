@@ -5,13 +5,13 @@ SECTIONS
     . = 1024K - 64K;
     stext = .;
     .text : { *(.text.startup) *(.text) *(.text.*) }
-    . = ALIGN(16);
+    . = ALIGN(32);
     .data : { *(.data) }
-    . = ALIGN(16);
+    . = ALIGN(32);
     .rodata : { *(.rodata) }
-    . = ALIGN(16);
+    . = ALIGN(32);
     .bss : { *(.bss) }
-    . = ALIGN(16);
+    . = ALIGN(32);
     edata = .;
     . = 1024K - 512;
     sinit = .;
