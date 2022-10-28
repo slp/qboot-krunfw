@@ -1,5 +1,4 @@
-#include <asm/bootparam.h>
-
+#include "bootparam.h"
 #include "ioport.h"
 #include "mptable.h"
 #include "string.h"
@@ -42,6 +41,12 @@ pvalidate(int paddr)
 	int validated = 1;
 	int ret;
 
+	// Linux wants to pvalidate this regions itself
+	if (paddr >= 0xc0000 && paddr < 0x100000)
+	{
+		return 0;
+	}
+
 	asm(".byte 0xF2, 0x0F, 0x01, 0xFF;"
 		: "=a"(ret)
 		: "a"(paddr), "c"(size), "d"(validated));
@@ -54,23 +59,18 @@ int __attribute__((section(".text.startup"))) main(void)
 	struct cc_blob_sev_info *cc = (struct cc_blob_sev_info *)0x4000;
 	struct boot_params *bp = (struct boot_params *)0x7000;
 	uint64_t sev_msr;
-	uint64_t mem_size;
 	int i;
 
 	sev_msr = rdmsr(MSR_AMD64_SEV);
 	if (sev_msr & MSR_AMD64_SEV_SNP_ENABLED_MASK)
 	{
-		mem_size = ((uint64_t)bp->hdr.ram_size) * 1024 * 1024;
+		for (i = 0; i < bp->e820_entries; ++i) {
+			uint64_t offset = bp->e820_table[i].addr;
+			uint64_t end = bp->e820_table[i].addr + bp->e820_table[i].size - 1;
 
-		for (i = 0; i < mem_size; i += 4096)
-		{
-			// Linux wants to pvalidate this regions itself
-			if (i >= 0xc0000 && i < 0x100000)
-			{
-				continue;
+			for (; offset < end; offset += 4096) {
+				pvalidate(offset);
 			}
-
-			pvalidate(i);
 		}
 
 		memset(cc, 0, sizeof(struct cc_blob_sev_info));
