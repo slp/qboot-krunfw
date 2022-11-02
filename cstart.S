@@ -72,7 +72,7 @@ ENTRY(pm_entry)
 	mov %eax, (0xa010)
 	mov %edx, (0xa014)
 
-	// Point to PDE_START in PDTTE_START 2-3GB
+	// Point to PDE_START in PDTTE_START 3-4GB
 	mov $0xe003, %eax
 	mov %eax, (0xa018)
 	mov %edx, (0xa01c)
