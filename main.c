@@ -199,7 +199,7 @@ int __attribute__((section(".text.startup"))) main(void)
 	asm("mov $0x8ff0, %rsp");
 	asm("mov $0x8ff0, %rbp");
 	asm("mov $0x7000, %rsi");
-	asm("mov $0x1000000, %rax");
+	asm("mov $0x1000080, %rax");
 	asm("jmpq *%rax");
 
 	// Not reached.
