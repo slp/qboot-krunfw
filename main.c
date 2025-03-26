@@ -49,6 +49,69 @@ rdmsr(uint64_t msr)
 	return ((uint64_t)high << 32) | low;
 }
 
+#define DLAB            0x80
+#define XMTRDY          0x20
+#define BAUD		9600
+
+#define TXR             0       /*  Transmit register (WRITE) */
+#define RXR             0       /*  Receive register  (READ)  */
+#define IER             1       /*  Interrupt Enable          */
+#define IIR             2       /*  Interrupt ID              */
+#define FCR             2       /*  FIFO control              */
+#define LCR             3       /*  Line control              */
+#define MCR             4       /*  Modem control             */
+#define LSR             5       /*  Line Status               */
+#define MSR             6       /*  Modem Status              */
+#define DLL             0       /*  Divisor Latch Low         */
+#define DLH             1       /*  Divisor latch High        */
+
+int early_serial_base;
+
+// Initialize serial port with ttyS0,115200.
+static void early_serial_init()
+{
+	int port = 0x3f8;   // ttyS0
+	unsigned char c;
+	unsigned divisor;
+
+	divisor	= 115200 / BAUD;
+
+	outb(port + LCR, 0x3);	/* 8n1 */
+	outb(port + IER, 0);	/* no interrupt */
+	outb(port + FCR, 0);	/* no fifo */
+	outb(port + MCR, 0x3);	/* DTR + RTS */
+
+	c = inb(port + LCR);
+	outb(port + LCR, c | DLAB);
+	outb(port + DLL, divisor & 0xff);
+	outb(port + DLH, (divisor >> 8) & 0xff);
+	outb(port + LCR, c & ~DLAB);
+
+	early_serial_base = port;
+}
+
+static void serial_putchar(unsigned char ch)
+{
+	unsigned timeout = 0xffff;
+
+	while ((inb(early_serial_base + LSR) & XMTRDY) == 0 && --timeout)
+		asm volatile("rep; nop");
+
+	outb(early_serial_base + TXR, ch);
+}
+
+static void serial_putstr(char *str, int size)
+{
+	int idx;
+
+	idx = 0;
+
+	while (idx < size) {
+		serial_putchar((unsigned char) str[idx]);
+		idx++;
+	}
+}
+
 static inline int
 pvalidate(uint64_t vaddr, bool size)
 {
@@ -161,6 +224,10 @@ int __attribute__((section(".text.startup"))) main(void)
 	uint64_t sev_msr;
 	uint64_t cbit;
 	int i;
+
+	early_serial_init();
+
+	serial_putstr("hello", 5);
 
 	sev_msr = rdmsr(MSR_AMD64_SEV);
 	if (sev_msr & MSR_AMD64_SEV_SNP_ENABLED_MASK)
