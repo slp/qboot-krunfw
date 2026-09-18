@@ -4,6 +4,7 @@
 #include "mptable.h"
 #include "ioport.h"
 #include "acpi.h"
+#include "tdx.h"
 
 struct tdcall_args {
 	uint64_t rax;
@@ -19,16 +20,76 @@ struct tdcall_args {
 
 void asm_td_call(struct tdcall_args *args);
 
+static int tdx_status_ok(uint64_t status)
+{
+	return status == 0 || status == TDX_PAGE_ALREADY_ACCEPTED;
+}
+
+static int tdx_status_busy(uint64_t status)
+{
+	/* Match SEAMCALL status class; low bits may carry details. */
+	return (status & 0xffffffff00000000ULL) == TDX_OPERAND_BUSY;
+}
+
 static void accept_page(uint64_t page)
 {
 	struct tdcall_args args;
+	int tries;
 
-	memset(&args, 0, sizeof(struct tdcall_args));
+	/*
+	 * Never give up on BUSY — the BSP hits this often under TDX, and
+	 * continuing leaves the page PENDING (#VE → KVM_EXIT_SHUTDOWN).
+	 */
+	for (;;) {
+		memset(&args, 0, sizeof(struct tdcall_args));
 
-	args.rax = 6; // TDCALL_TDACCEPTPAGE
-	args.rcx = page;
+		args.rax = 6; // TDCALL_TDACCEPTPAGE
+		args.rcx = page;
 
-	asm_td_call(&args);
+		asm_td_call(&args);
+
+		if (tdx_status_ok(args.rax))
+			return;
+
+		if (tdx_status_busy(args.rax)) {
+			bsp_settle(8);
+			continue;
+		}
+
+		/* Unexpected status: fall through to pause-backed retries. */
+		break;
+	}
+
+	/* Hard error: retry with pause backoff before declaring failure. */
+	for (tries = 0; tries < 10000; tries++) {
+		bsp_pause(64);
+		memset(&args, 0, sizeof(struct tdcall_args));
+		args.rax = 6;
+		args.rcx = page;
+		asm_td_call(&args);
+		if (tdx_status_ok(args.rax))
+			return;
+		if (tdx_status_busy(args.rax)) {
+			bsp_settle(8);
+			continue;
+		}
+	}
+
+	/*
+	 * Last resort: keep trying forever rather than touch a PENDING
+	 * page (triple fault).
+	 */
+	for (;;) {
+		bsp_pause(128);
+		memset(&args, 0, sizeof(struct tdcall_args));
+		args.rax = 6;
+		args.rcx = page;
+		asm_td_call(&args);
+		if (tdx_status_ok(args.rax))
+			return;
+		if (tdx_status_busy(args.rax))
+			bsp_settle(8);
+	}
 }
 
 static void accept_range(uint64_t start, uint64_t end)
@@ -56,12 +117,6 @@ static int page_in_e820_ram(struct boot_params *bp, uint64_t addr)
 			return 1;
 	}
 	return 0;
-}
-
-static void boot_fail(void)
-{
-	for (;;)
-		asm volatile("pause");
 }
 
 /*
@@ -156,6 +211,7 @@ int __attribute__ ((section (".text.startup"))) main(uint64_t cpuid)
 
 		accept_range(e820.addr, e820.addr + e820.size);
 	}
+	bsp_settle(64);
 
 	/*
 	 * TDX low e820 RAM ends before EBDA. The MP table (0x9fc00) and
@@ -186,19 +242,31 @@ int __attribute__ ((section (".text.startup"))) main(uint64_t cpuid)
 		if (low_ram_end < 0x100000UL)
 			accept_range(low_ram_end, 0x100000UL);
 	}
+	bsp_settle(64);
 
 	if (!page_in_e820_ram(bp, MP_WAKEUP_MAILBOX_ADDR))
 		boot_fail();
 	setup_mp_wakeup_mailbox();
+
 	madt_rc = setup_madt_mailbox(MP_WAKEUP_MAILBOX_ADDR);
 	if (madt_rc != 0)
 		boot_fail();
+
 	if (reserve_mailbox_nvs(bp) != 0)
 		boot_fail();
+
 	setup_mptable(bp->hdr.root_flags);
 
 	/* APs may now leave the early park and enter the mailbox loop. */
 	release_aps();
+
+	/*
+	 * APs must leave park_ap, re-enter switch_to_64, and reach the
+	 * mailbox wait before the OS can wake them. TDVMCALL settle gives
+	 * the host a chance to schedule APs; bare pause was not enough on
+	 * the validated libkrun/KVM path (empirical count).
+	 */
+	bsp_settle(512);
 
 	asm("xor %rax, %rax");
 	asm("mov %0, %%rax"
