@@ -2,7 +2,12 @@ OUTPUT_ARCH(i386:x86-64)
 
 SECTIONS
 {
-    . = 1024K - 64K;
+    /*
+     * TDX loads qboot at FIRMWARE_START (0xffff0000). Link at that
+     * address so absolute references to .rodata/.data/.bss hit the
+     * firmware image rather than low guest RAM.
+     */
+    . = 0xffff0000;
     stext = .;
     .text : { *(.text.startup) *(.text) *(.text.*) }
     . = ALIGN(32);
@@ -13,7 +18,7 @@ SECTIONS
     .bss : { *(.bss) }
     . = ALIGN(32);
     edata = .;
-    . = 1024K - 512;
+    . = 0xfffffe00;
     sinit = .;
     .init : {
 	*(.init);
