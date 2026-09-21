@@ -27,6 +27,7 @@ elf = executable(
     'accept.S',
     'main.c',
     'mptable.c',
+    'madt.c',
   ),
   c_args: c_args,
   include_directories: include_directories('include'),
